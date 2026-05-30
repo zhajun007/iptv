@@ -45,24 +45,44 @@ function parseM3uContent(content) {
 }
 
 /**
+ * 将 raw.githubusercontent.com 地址转换为 jsdelivr 格式 /gh/owner/repo@branch/path
+ */
+function toJsdelivr(url, base) {
+  let u = url.replace('https://raw.githubusercontent.com/', base)
+  if (u.includes('/refs/heads/')) {
+    u = u.replace('/refs/heads/', '@')
+  } else {
+    // owner/repo/branch/path → owner/repo@branch/path
+    u = u.replace(/(\/gh\/[^/]+\/[^/]+)\//, '$1@')
+  }
+  return u
+}
+
+/**
  * GitHub raw 镜像列表（当直连 raw.githubusercontent.com 失败时回退）
  */
 const GITHUB_RAW_MIRRORS = [
   (url) => url, // 原始地址优先
   (url) => url.replace('https://raw.githubusercontent.com/', 'https://ghfast.top/https://raw.githubusercontent.com/'),
   (url) => url.replace('https://raw.githubusercontent.com/', 'https://gh-proxy.com/https://raw.githubusercontent.com/'),
-  (url) => {
-    // jsdelivr 格式: /gh/owner/repo@branch/path
-    let u = url.replace('https://raw.githubusercontent.com/', 'https://gcore.jsdelivr.net/gh/')
-    if (u.includes('/refs/heads/')) {
-      u = u.replace('/refs/heads/', '@')
-    } else {
-      // owner/repo/branch/path → owner/repo@branch/path
-      u = u.replace(/(\/gh\/[^/]+\/[^/]+)\//, '$1@')
-    }
-    return u
-  },
+  (url) => toJsdelivr(url, 'https://gcore.jsdelivr.net/gh/'),
+  (url) => toJsdelivr(url, 'https://cdn.jsdelivr.net/gh/'), // 备用 jsdelivr 边缘节点
 ]
+
+/**
+ * 从 URL 中取出主机名（用于日志/错误信息）
+ */
+function hostOf(url) {
+  try { return new URL(url).host } catch { return url }
+}
+
+/**
+ * 把 fetch 失败原因提炼成可读信息（node-fetch 的 reason 经常为空）
+ */
+function describeFetchError(error) {
+  if (error?.name === 'AbortError' || error?.type === 'aborted') return '请求超时'
+  return error?.code || error?.cause?.code || error?.cause?.message || error?.message || '未知错误'
+}
 
 /**
  * 从远程 URL 获取并解析 m3u 播放列表（支持 GitHub 镜像回退）
@@ -70,14 +90,14 @@ const GITHUB_RAW_MIRRORS = [
 async function fetchAndParseM3u(subscriptionUrl) {
   const isGithubRaw = subscriptionUrl.includes('raw.githubusercontent.com')
   const mirrors = isGithubRaw ? GITHUB_RAW_MIRRORS : [(url) => url]
-  
-  let lastError = null
-  
+
+  const failures = []
+
   for (const transformUrl of mirrors) {
     const targetUrl = transformUrl(subscriptionUrl)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
-    
+
     try {
       const response = await fetch(targetUrl, {
         signal: controller.signal,
@@ -86,34 +106,34 @@ async function fetchAndParseM3u(subscriptionUrl) {
         }
       })
       clearTimeout(timeoutId)
-      
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`HTTP ${response.status}${response.statusText ? ' ' + response.statusText : ''}`)
       }
-      
+
       const content = await response.text()
       const channels = parseM3uContent(content)
-      
+
       if (channels.length === 0) {
         throw new Error('未能从播放列表中解析出任何频道')
       }
-      
+
       if (targetUrl !== subscriptionUrl) {
-        printGreen(`通过镜像获取成功: ${targetUrl.substring(0, 60)}...`)
+        printGreen(`通过镜像获取成功: ${hostOf(targetUrl)}`)
       }
-      
+
       return channels
     } catch (error) {
       clearTimeout(timeoutId)
-      lastError = error
-      if (targetUrl !== subscriptionUrl) {
-        printYellow(`镜像获取失败 (${targetUrl.substring(0, 50)}...): ${error.message}`)
-      }
+      const reason = describeFetchError(error)
+      failures.push(`${hostOf(targetUrl)}(${reason})`)
+      printYellow(`订阅获取失败 (${hostOf(targetUrl)}): ${reason}`)
       continue
     }
   }
-  
-  throw lastError || new Error('所有获取方式均失败')
+
+  // 所有线路都失败：给出可操作的提示，而不是单条被截断的 node-fetch 报错
+  throw new Error(`所有线路均无法获取订阅，请检查服务器能否访问 GitHub/CDN（必要时配置代理或更换可访问的订阅地址）。已尝试: ${failures.join('，')}`)
 }
 
 const EXTERNAL_SOURCES_PATH = path.join(process.cwd(), 'external-sources.json')
