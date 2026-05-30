@@ -9,7 +9,8 @@ const CONFIG_PATH = `${process.cwd()}/my-playlist-config.json`
  * 默认配置
  */
 const DEFAULT_CONFIG = {
-  channelGroupMap: {},      // 频道ID → 自定义分组名
+  channelGroupMap: {},      // 单频道归类： "原始分组::频道ID" → 目标分组名
+  channelOrder: {},         // 组内频道顺序： 显示分组名 → ["原始分组::频道ID", ...]
   hiddenChannels: [],       // 隐藏的频道ID列表
   customGroups: [],         // 自定义分组 [{name, order}]
   groupOrder: [],           // 分组显示顺序
@@ -318,7 +319,23 @@ export function applyConfig(groups, config) {
         return 0
       })
     }
-    
+
+    // 6. 应用组内频道排序（拖拽排序）：按 显示分组名 → ["原始分组::频道ID"] 排序
+    const channelOrder = config.channelOrder || {}
+    result.forEach(group => {
+      const order = channelOrder[group.name]
+      if (Array.isArray(order) && order.length > 0) {
+        group.channels.sort((a, b) => {
+          const ia = order.indexOf(`${a.originalGroup}::${a.id}`)
+          const ib = order.indexOf(`${b.originalGroup}::${b.id}`)
+          if (ia !== -1 && ib !== -1) return ia - ib
+          if (ia !== -1) return -1   // 已排序的在前
+          if (ib !== -1) return 1
+          return 0                   // 都不在列表中：保持相对顺序（V8 稳定排序）
+        })
+      }
+    })
+
     const totalChannels = result.reduce((sum, g) => sum + g.channels.length, 0)
     printGreen(`配置应用完成: ${result.length} 个分组, ${totalChannels} 个频道`)
     

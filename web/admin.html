@@ -1415,6 +1415,24 @@
             cursor: default;
         }
 
+        .my-playlist-channel.dragging {
+            opacity: 0.4;
+        }
+
+        .channel-drag-handle {
+            margin-right: 8px;
+            color: #bbb;
+            cursor: grab;
+            -webkit-user-select: none;
+            user-select: none;
+            font-size: 14px;
+            flex: 0 0 auto;
+        }
+
+        .my-playlist-channel:hover .channel-drag-handle {
+            color: #1890ff;
+        }
+
         .my-playlist-channel-checkbox {
             margin-right: 8px;
             cursor: pointer;
@@ -3102,6 +3120,7 @@ if(success){
         let myPlaylistOriginalData = []; // 原始完整数据（用于显示被删除的频道）
         let myPlaylistConfig = {
             channelGroupMap: {},
+            channelOrder: {},
             hiddenChannels: [],
             customGroups: [],
             groupOrder: [],
@@ -3112,6 +3131,7 @@ if(success){
         let isViewingDeleted = false; // 是否正在查看被删除区域
         let isBatchMode = false; // 是否处于批量管理模式
         let selectedChannels = new Set(); // 批量选中的频道ID
+        let draggedChannelId = null; // 拖拽排序中被拖动的频道ID
 
         async function loadMyPlaylist(resetView = true) {
             try {
@@ -3395,12 +3415,13 @@ if(success){
                     ` : `
                         <div class="my-playlist-channels">
                             ${group.channels.map(channel => `
-                                <div class="my-playlist-channel ${isBatchMode ? 'batch-mode' : ''}" data-channel-id="${channel.id}">
+                                <div class="my-playlist-channel ${isBatchMode ? 'batch-mode' : ''}" data-channel-id="${channel.id}"
+                                     ${!isBatchMode ? `draggable="true" ondragstart="onChannelDragStart(event, '${channel.id}')" ondragend="onChannelDragEnd(event)" ondragover="onChannelDragOver(event)" ondrop="onChannelDrop(event, '${channel.id}')"` : ''}>
                                     ${isBatchMode ? `
-                                        <input type="checkbox" class="my-playlist-channel-checkbox" 
-                                               onchange="toggleChannelSelection('${channel.id}')" 
+                                        <input type="checkbox" class="my-playlist-channel-checkbox"
+                                               onchange="toggleChannelSelection('${channel.id}')"
                                                ${selectedChannels.has(channel.id) ? 'checked' : ''}>
-                                    ` : ''}
+                                    ` : `<span class="channel-drag-handle" aria-hidden="true" title="拖拽排序">⠿</span>`}
                                     <div class="my-playlist-channel-name" title="点击查看详情：${channel.name}" onclick="showChannelDetail('${channel.id}', false)" style="cursor: pointer;">
                                         <span class="channel-detail-hint" aria-hidden="true">ⓘ</span>${channel.name}
                                     </div>
@@ -4469,6 +4490,65 @@ if(success){
                 }
             } catch (error) {
                 showStatus('移动失败: ' + error.message, 'error');
+            }
+        }
+
+        // ===== 频道拖拽排序 =====
+        function onChannelDragStart(event, channelId) {
+            draggedChannelId = channelId;
+            event.dataTransfer.effectAllowed = 'move';
+            try { event.dataTransfer.setData('text/plain', channelId); } catch (_) {}
+            event.currentTarget.classList.add('dragging');
+        }
+
+        function onChannelDragEnd(event) {
+            event.currentTarget.classList.remove('dragging');
+            draggedChannelId = null;
+            document.querySelectorAll('.my-playlist-channel.drag-over')
+                .forEach(el => el.classList.remove('drag-over'));
+        }
+
+        function onChannelDragOver(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+        }
+
+        async function onChannelDrop(event, targetId) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!draggedChannelId || draggedChannelId === targetId) return;
+
+            const group = myPlaylistData[selectedGroupIndex];
+            if (!group || !Array.isArray(group.channels)) return;
+            const chans = group.channels;
+            const from = chans.findIndex(c => c.id === draggedChannelId);
+            if (from === -1) return;
+
+            // 落点在目标行上半/下半 → 插入到目标前/后
+            const rect = event.currentTarget.getBoundingClientRect();
+            const after = (event.clientY - rect.top) > rect.height / 2;
+
+            const [moved] = chans.splice(from, 1);
+            const to = chans.findIndex(c => c.id === targetId);
+            if (to === -1) { chans.splice(from, 0, moved); return; } // 异常回退
+            chans.splice(after ? to + 1 : to, 0, moved);
+
+            // 持久化该显示分组的频道顺序（键为 原始分组::频道ID）
+            if (!myPlaylistConfig.channelOrder) myPlaylistConfig.channelOrder = {};
+            myPlaylistConfig.channelOrder[group.name] = chans.map(c => `${c.originalGroup}::${c.id}`);
+
+            renderMyPlaylist(); // 拖拽不涉及输入焦点，直接重渲染
+
+            try {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(myPlaylistConfig)
+                });
+                const result = await response.json();
+                if (!result.success) showStatus('排序保存失败', 'error');
+            } catch (error) {
+                showStatus('排序保存失败: ' + error.message, 'error');
             }
         }
 
