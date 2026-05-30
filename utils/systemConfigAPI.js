@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "node:fs"
 import path from "node:path"
 import { writeJsonFileSync } from "./fileUtil.js"
-import { reloadConfig } from "../config.js"
+import { reloadConfig, sanitizeSegment } from "../config.js"
 
 const SYSTEM_CONFIG_PATH = path.join(process.cwd(), 'system-config.json')
 
@@ -24,7 +24,8 @@ export function getSystemConfigAPI() {
           enableHDR: true,
           enableH265: true,
           programInfoUpdateInterval: "8",
-          refreshToken: true
+          refreshToken: true,
+          adminPath: "admin"
         }
       }
     }
@@ -71,6 +72,10 @@ export function saveSystemConfigAPI(config) {
     }
     if (config.refreshToken !== undefined) {
       validated.refreshToken = config.refreshToken !== false
+    }
+    if (config.adminPath !== undefined) {
+      // 清洗为合法路径段（非法/保留字回退 admin），保证存储值与运行时一致
+      validated.adminPath = sanitizeSegment(config.adminPath, 'admin')
     }
 
     // 原子写入，避免并发保存 / 写入中断损坏文件

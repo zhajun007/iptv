@@ -1767,6 +1767,11 @@
                         <input type="text" id="sysPass" placeholder="留空表示无密码">
                         <div class="system-config-hint">设置后访问格式：http://ip:port/密码/...</div>
                     </div>
+                    <div class="system-config-item">
+                        <label>管理页面路径</label>
+                        <input type="text" id="sysAdminPath" placeholder="admin">
+                        <div class="system-config-hint">自定义后台地址（默认 admin），如填 <code>console</code> 则用 <code>/console</code> 访问，<code>/admin</code> 将失效；保存后需用新地址访问（api / player / favicon.ico 为保留字）</div>
+                    </div>
                     <div class="system-config-item" style="display: none;">
                         <label>节目单更新间隔（小时）</label>
                         <input type="number" id="sysProgramInterval" placeholder="6">
@@ -1875,9 +1880,18 @@
     </div>
 
     <script>
-        // 访问密码模式下，管理页位于 /<pass>/admin，API 也需带上 /<pass> 前缀。
-        // 无密码时为空字符串，等价于直接请求 /api/...
-        const API_PREFIX = window.location.pathname.replace(/\/admin$/, '');
+        // 管理页位于 /<adminPath> 或 /<pass>/<adminPath>，API 前缀 = 去掉 URL 最后一段（管理页路径段）。
+        // 这样无论管理页改成什么名字都成立：/admin→''，/secret→''，/密码/secret→'/密码'。
+        const API_PREFIX = window.location.pathname.replace(/\/[^/]+$/, '');
+
+        // 清洗管理页面路径段（与后端 config.js sanitizeSegment 保持一致）
+        function sanitizeAdminPath(v) {
+            if (!v) return 'admin';
+            const s = String(v).trim().replace(/^\/+|\/+$/g, '');
+            if (!s || /[\/\s]/.test(s) || ['api', 'player', 'favicon.ico'].includes(s.toLowerCase())) return 'admin';
+            return s;
+        }
+
         let allChannels = [];
         let externalConfig = {
             enabled: false,
@@ -2900,6 +2914,7 @@
             document.getElementById('sysHost').value = systemConfig.host || '';
             document.getElementById('sysRateType').value = systemConfig.rateType || 3;
             document.getElementById('sysPass').value = systemConfig.pass || '';
+            document.getElementById('sysAdminPath').value = systemConfig.adminPath || 'admin';
             document.getElementById('sysProgramInterval').value = systemConfig.programInfoUpdateInterval || '8';
             document.getElementById('sysEnableHDR').checked = systemConfig.enableHDR !== false;
             document.getElementById('sysEnableH265').checked = systemConfig.enableH265 !== false;
@@ -3010,6 +3025,7 @@ if(success){
                     host = `${host}:${port}`;
                 }
                 
+                const adminPathInput = document.getElementById('sysAdminPath').value;
                 const config = {
                     userId: document.getElementById('sysUserId').value,
                     token: document.getElementById('sysToken').value,
@@ -3017,6 +3033,7 @@ if(success){
                     host: host,
                     rateType: parseInt(document.getElementById('sysRateType').value) || 3,
                     pass: document.getElementById('sysPass').value,
+                    adminPath: adminPathInput,
                     programInfoUpdateInterval: document.getElementById('sysProgramInterval').value || '8',
                     enableHDR: document.getElementById('sysEnableHDR').checked,
                     enableH265: document.getElementById('sysEnableH265').checked
@@ -3033,6 +3050,15 @@ if(success){
                 const result = await response.json();
 
                 if (result.success) {
+                    // 管理页面路径变更：旧地址即时失效，跳转到新地址避免用户被卡住
+                    const newAdminPath = sanitizeAdminPath(adminPathInput);
+                    const currentSeg = window.location.pathname.replace(/.*\//, '');
+                    if (newAdminPath !== currentSeg) {
+                        const newUrl = window.location.origin + API_PREFIX + '/' + newAdminPath;
+                        showStatus(`管理页面路径已改为 /${newAdminPath}，3 秒后跳转到新地址…`, 'success');
+                        setTimeout(() => { window.location.href = newUrl; }, 3000);
+                        return;
+                    }
                     showStatus(result.message, 'success');
                 } else {
                     showStatus(result.message || '保存失败', 'error');
@@ -4351,8 +4377,8 @@ if(success){
 
             // 显示URL
             if (channel.url) {
-                // 获取当前页面的base URL（去掉/admin后的部分）
-                const baseUrl = window.location.origin + window.location.pathname.replace(/\/admin$/, '');
+                // 获取当前页面的base URL（去掉 URL 最后一段，即管理页路径段）
+                const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]+$/, '');
                 // 替换URL中的${replace}占位符为实际的base URL
                 const actualUrl = channel.url.replace(/\$\{replace\}/g, baseUrl);
                 // 构建播放器URL

@@ -2,7 +2,7 @@ import http from "node:http"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import fetch from 'node-fetch'
-import { host, pass, port, programInfoUpdateInterval, token, userId } from "./config.js";
+import { adminPath, host, pass, port, programInfoUpdateInterval, token, userId } from "./config.js";
 import { getDateTimeStr } from "./utils/time.js";
 import update from "./utils/updateData.js";
 import { printBlue, printGreen, printMagenta, printRed, printYellow } from "./utils/colorOut.js";
@@ -53,12 +53,12 @@ const server = http.createServer(async (req, res) => {
     routePath = urlPath.slice(`/${pass}`.length) || "/"
   }
 
-  // 管理后台路由（支持 /admin 和 /密码/admin）
-  if (routePath === '/admin') {
+  // 管理后台路由（路径可自定义，默认 /admin；支持 /<adminPath> 和 /密码/<adminPath>）
+  if (routePath === `/${adminPath}`) {
     if (!passAuthed) {
       printRed(`管理后台访问需要密码，已拒绝未授权访问`)
       res.writeHead(403, { 'Content-Type': 'text/html;charset=UTF-8' });
-      res.end(`<html><body><p>访问需要密码，请使用正确的密码路径访问管理后台。</p><p>格式: <code>/你的密码/admin</code></p></body></html>`);
+      res.end(`<html><body><p>访问需要密码，请使用正确的密码路径访问管理后台。</p><p>格式: <code>/你的密码/${adminPath}</code></p></body></html>`);
       return
     }
     // 返回管理页面
@@ -510,7 +510,7 @@ server.listen(port, async () => {
   }, 60 * 1000) // 60秒后重试
 
   printGreen(`本地地址: http://localhost:${port}${pass == "" ? "" : "/" + pass}`)
-  printGreen(`管理平台地址: http://localhost:${port}${pass == "" ? "" : "/" + pass}/admin`)
+  printGreen(`管理平台地址: http://localhost:${port}${pass == "" ? "" : "/" + pass}/${adminPath}`)
   printGreen("开源地址: https://github.com/akiralereal/iptv ")
   if (host != "") {
     printGreen(`自定义地址: ${host}${pass == "" ? "" : "/" + pass}`)

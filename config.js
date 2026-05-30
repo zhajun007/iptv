@@ -26,11 +26,21 @@ function parseBool(value, fallback) {
   return str !== 'false' && str !== '0' && str !== 'off' && str !== 'no'
 }
 
+// 清洗 URL 路径段（用于自定义管理页路径）：去首尾斜杠，禁止内部斜杠/空白，
+// 避开与内置路由冲突的保留字，非法时回退默认值
+const RESERVED_SEGMENTS = ['api', 'player', 'favicon.ico']
+function sanitizeSegment(value, fallback) {
+  if (!value) return fallback
+  const s = String(value).trim().replace(/^\/+|\/+$/g, '')
+  if (!s || /[\/\s]/.test(s) || RESERVED_SEGMENTS.includes(s.toLowerCase())) return fallback
+  return s
+}
+
 // 导出值使用 let，配合 reloadConfig() 实现热更新：
 // ESM 命名导出是实时绑定，重新赋值后所有 import 方都会读到新值。
 // 注意：port、programInfoUpdateInterval 在 server.listen / setInterval 时已被读取，
 // 热更新不会改变已启动的监听端口与定时器周期，这两项仍需重启生效。
-let userId, token, port, host, rateType, debug, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken
+let userId, token, port, host, rateType, debug, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath
 
 function applyConfig(systemConfig) {
   // 用户id
@@ -57,6 +67,8 @@ function applyConfig(systemConfig) {
   programInfoUpdateInterval = systemConfig.programInfoUpdateInterval || process.env.mupdateInterval || "8"
   // 是否每月刷新token（可能是导致封号的原因，可关闭）
   refreshToken = systemConfig.refreshToken !== undefined ? systemConfig.refreshToken : parseBool(process.env.mrefreshToken, true)
+  // 管理页面自定义路径（默认 admin）：改名后用 /<adminPath> 访问后台，裸 /admin 失效
+  adminPath = sanitizeSegment(systemConfig.adminPath || process.env.madminPath, 'admin')
 }
 
 applyConfig(loadSystemConfig())
@@ -64,7 +76,7 @@ applyConfig(loadSystemConfig())
 // 重新加载系统配置（保存系统配置后调用，避免必须重启进程）
 function reloadConfig() {
   applyConfig(loadSystemConfig())
-  return { userId, token, port, host, rateType, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken }
+  return { userId, token, port, host, rateType, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath }
 }
 
-export { userId, token, port, host, rateType, debug, pass, enableHDR, programInfoUpdateInterval, enableH265, refreshToken, reloadConfig }
+export { userId, token, port, host, rateType, debug, pass, enableHDR, programInfoUpdateInterval, enableH265, refreshToken, adminPath, reloadConfig, sanitizeSegment }
