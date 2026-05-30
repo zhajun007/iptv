@@ -1,7 +1,7 @@
 import { getAllChannels, updateExternalSources, updateBuiltInSources, externalSourceManager } from "./channelMerger.js"
 import { appendFile, appendFileSync, copyFileSync, renameFileSync, writeFile, writeFileSync } from "./fileUtil.js"
 import { updatePlaybackData } from "./playback.js"
-import { /* refreshToken as mrefreshToken, */ host, pass, token, userId } from "../config.js"
+import { refreshToken as enableTokenRefresh, host, pass, token, userId } from "../config.js"
 import refreshToken from "./refreshToken.js"
 import { printGreen, printRed, printYellow, printBlue } from "./colorOut.js"
 import { getDateString } from "./time.js"
@@ -77,11 +77,11 @@ async function updateTV(hours, options = {}) {
   if (!(hours % 720)) {
     // 每720小时(一个月)刷新token
     if (userId != "" && token != "") {
-      // if (mrefreshToken) {
-      await refreshToken(userId, token) ? printGreen("token刷新成功") : printRed("token刷新失败")
-      // } else {
-      // printGreen(`跳过token刷新`)
-      // }
+      if (enableTokenRefresh) {
+        await refreshToken(userId, token) ? printGreen("token刷新成功") : printRed("token刷新失败")
+      } else {
+        printYellow("已关闭token刷新（refreshToken=false），跳过")
+      }
     }
   }
   appendFileSync(interfacePath, `#EXTM3U x-tvg-url="\${replace}/playback.xml" catchup="append" catchup-source="?playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n`)
@@ -278,10 +278,10 @@ async function updatePE(hours) {
  * @param {boolean} options.startupMode - 启动模式
  * @param {boolean} options.regenerateOnly - 仅重新生成播放列表，跳过PE更新
  */
-async function update(hours, options = {}) {
+async function runUpdate(hours, options = {}) {
   const { regenerateOnly = false } = options
   await updateTV(hours, options)
-  
+
   if (!regenerateOnly) {
     await updatePE(hours)
   } else {
@@ -304,6 +304,18 @@ async function update(hours, options = {}) {
       printYellow("快速模式：尚无PE缓存，体育赛事频道本次暂缺（等待下次完整更新）")
     }
   }
+}
+
+// 单飞锁：串行化所有 update() 调用。
+// 多个触发源（启动、每 N 小时定时任务、每小时源刷新、后台保存外部源）可能并发调用，
+// 而 updateTV/updatePE 都写同一批固定的 .bak 文件再 rename；并发执行会交叉写入导致
+// interface.txt / interfaceTXT.txt / playback.xml 损坏。这里用 Promise 链保证逐个执行。
+let updateQueue = Promise.resolve()
+function update(hours, options = {}) {
+  const result = updateQueue.then(() => runUpdate(hours, options))
+  // 保证队列不被单次失败中断（调用方仍能拿到本次的真实结果/异常）
+  updateQueue = result.then(() => {}, () => {})
+  return result
 }
 
 export default update

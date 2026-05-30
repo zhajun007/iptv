@@ -6,10 +6,9 @@ import { host, pass, port, programInfoUpdateInterval, token, userId } from "./co
 import { getDateTimeStr } from "./utils/time.js";
 import update from "./utils/updateData.js";
 import { printBlue, printGreen, printMagenta, printRed, printYellow } from "./utils/colorOut.js";
-import { delay } from "./utils/fetchList.js";
 import { channel, interfaceStr } from "./utils/appUtils.js";
-import { getChannelsAPI, getExternalSourcesAPI, saveExternalSourcesAPI, 
-         addExternalSourceAPI, removeExternalSourceAPI, updateExternalSourceAPI, 
+import { getChannelsAPI, getExternalSourcesAPI, saveExternalSourcesAPI,
+         addExternalSourceAPI, removeExternalSourceAPI, updateExternalSourceAPI,
          setExternalSourceM3u8API, importSubscriptionAPI, getBuiltInSourcesAPI } from "./utils/adminAPI.js";
 import { getSystemConfigAPI, saveSystemConfigAPI } from "./utils/systemConfigAPI.js";
 import { readConfig, saveConfig, parseInterfaceTxt, validateGroupConfig, applyConfig } from "./utils/playlistConfig.js";
@@ -18,41 +17,50 @@ import { GITHUB_RAW_MIRRORS } from "./utils/externalSources.js";
 
 // 运行时长
 var hours = 0
-let loading = false
+
+// 读取请求体（Promise 化，避免回调式写法导致的释放/死锁问题）
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => resolve(body))
+    req.on('error', reject)
+  })
+}
 
 const server = http.createServer(async (req, res) => {
 
-  while (loading) {
-    await delay(50)
-  }
-
-  loading = true
-
   // 获取请求方法、URL 和请求头
   let { method, url, headers } = req;
-  
+
   // 清理 URL，去除查询参数
   const urlPath = url.split('?')[0]
-  
+
   // 处理 favicon.ico 请求
   if (urlPath === '/favicon.ico') {
     res.writeHead(204);
     res.end();
-    loading = false
     return
   }
-  
+
+  // ---- 统一访问密码前缀处理 ----
+  // pass 为空：全部放行；pass 非空：只有 /<pass>/... 视为已授权。
+  // routePath 为剥离密码前缀后的路径，用于后续所有路由匹配。
+  let passAuthed = pass === ""
+  let routePath = urlPath
+  if (pass !== "" && (urlPath === `/${pass}` || urlPath.startsWith(`/${pass}/`))) {
+    passAuthed = true
+    routePath = urlPath.slice(`/${pass}`.length) || "/"
+  }
+
   // 管理后台路由（支持 /admin 和 /密码/admin）
-  if (urlPath === '/admin' || (pass !== "" && urlPath === `/${pass}/admin`)) {
-    if (pass !== "" && urlPath !== `/${pass}/admin`) {
-      // 需要密码但未提供或密码错误
+  if (routePath === '/admin') {
+    if (!passAuthed) {
       printRed(`管理后台访问需要密码，已拒绝未授权访问`)
       res.writeHead(403, { 'Content-Type': 'text/html;charset=UTF-8' });
       res.end(`<html><body><p>访问需要密码，请使用正确的密码路径访问管理后台。</p><p>格式: <code>/你的密码/admin</code></p></body></html>`);
-      loading = false
       return
     }
-
     // 返回管理页面
     try {
       const html = readFileSync(`${process.cwd()}/web/admin.html`, 'utf-8')
@@ -64,20 +72,16 @@ const server = http.createServer(async (req, res) => {
       res.end('Admin page not found');
       printRed("管理页面文件不存在")
     }
-    loading = false
     return
   }
-  
+
   // 播放器页面路由（支持 /player 和 /密码/player）
-  if (urlPath === '/player' || (pass !== "" && urlPath === `/${pass}/player`)) {
-    if (pass !== "" && urlPath !== `/${pass}/player`) {
-      // 需要密码但未提供或密码错误
+  if (routePath === '/player') {
+    if (!passAuthed) {
       res.writeHead(403, { 'Content-Type': 'text/html;charset=UTF-8' });
       res.end(`<html><body><p>访问需要密码，请使用正确的密码路径访问。</p><p>格式: <code>/你的密码/player</code></p></body></html>`);
-      loading = false
       return
     }
-
     try {
       const html = readFileSync(`${process.cwd()}/web/player.html`, 'utf-8')
       res.writeHead(200, { 'Content-Type': 'text/html;charset=UTF-8' });
@@ -88,131 +92,118 @@ const server = http.createServer(async (req, res) => {
       res.end('Player page not found');
       printRed("播放器页面文件不存在")
     }
-    loading = false
     return
   }
-  
+
   // API 路由
-  if (urlPath.startsWith('/api/')) {
-    // 需要密码时检查
-    if (pass !== "" && !req.headers.referer?.includes(`/${pass}/admin`)) {
+  if (routePath.startsWith('/api/')) {
+    // 鉴权：与页面一致，使用路径中的访问密码（前端在密码模式下会请求 /<pass>/api/...）。
+    // 替代旧的、可被伪造的 Referer 头校验。
+    if (!passAuthed) {
       res.writeHead(403, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify({ success: false, message: '未授权访问' }));
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/channels' && method === 'GET') {
+
+    if (routePath === '/api/channels' && method === 'GET') {
       printBlue("API: 获取频道列表")
       const result = await getChannelsAPI()
       printGreen(`API: 返回 ${result.success ? result.data.length : 0} 个分组`)
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify(result.success ? result.data : []));
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/system-config' && method === 'GET') {
+
+    if (routePath === '/api/system-config' && method === 'GET') {
       printBlue("API: 获取系统配置")
       const result = getSystemConfigAPI()
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify(result.success ? result.data : {}));
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/system-config' && method === 'POST') {
-      let body = ''
-      req.on('data', chunk => { body += chunk })
-      req.on('end', () => {
-        try {
-          const config = JSON.parse(body)
-          const result = saveSystemConfigAPI(config)
-          res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify(result));
-          printGreen(result.success ? "系统配置已保存" : "保存失败")
-        } catch (error) {
-          res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify({ success: false, message: error.message }));
-        }
-        loading = false
-      })
+
+    if (routePath === '/api/system-config' && method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const config = JSON.parse(body)
+        const result = saveSystemConfigAPI(config)
+        res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify(result));
+        printGreen(result.success ? "系统配置已保存" : "保存失败")
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify({ success: false, message: error.message }));
+      }
       return
     }
-    
+
     // 重启服务API
-    if (urlPath === '/api/restart' && method === 'POST') {
+    if (routePath === '/api/restart' && method === 'POST') {
       printMagenta("API: 收到重启请求")
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify({ success: true, message: '服务将在 2 秒后重启...' }));
-      loading = false
-      
-      // 2秒后执行重启
+
+      // 2秒后退出进程。注意：本进程仅退出，不会自我拉起，
+      // 依赖外部守护进程（Docker restart:always / pm2 / systemd）重新启动。
       setTimeout(() => {
-        printMagenta("正在重启服务...")
+        printMagenta("正在退出进程，等待守护进程（Docker/pm2/systemd）拉起...")
         process.exit(0)
       }, 2000)
       return
     }
-    
+
     // 外部源管理API
-    if (urlPath === '/api/external-sources' && method === 'GET') {
+    if (routePath === '/api/external-sources' && method === 'GET') {
       printBlue("API: 获取外部源配置")
       const result = getExternalSourcesAPI()
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify(result));
-      loading = false
       return
     }
-    
+
     // 内置源管理API
-    if (urlPath === '/api/built-in-sources' && method === 'GET') {
+    if (routePath === '/api/built-in-sources' && method === 'GET') {
       printBlue("API: 获取内置源配置")
       const result = getBuiltInSourcesAPI()
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
       res.end(JSON.stringify(result));
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/external-sources' && method === 'POST') {
-      let body = ''
-      req.on('data', chunk => { body += chunk })
-      req.on('end', async () => {
-        try {
-          const data = JSON.parse(body)
-          let result
-          
-          if (data.action === 'save') {
-            result = await saveExternalSourcesAPI(data.sources)
-          } else if (data.action === 'add') {
-            result = addExternalSourceAPI(data.source)
-          } else if (data.action === 'remove') {
-            result = removeExternalSourceAPI(data.index)
-          } else if (data.action === 'update') {
-            result = await updateExternalSourceAPI(data.index || -1)
-          } else if (data.action === 'setM3u8') {
-            result = setExternalSourceM3u8API(data.index, data.m3u8Url)
-          } else if (data.action === 'importSubscription') {
-            result = await importSubscriptionAPI(data.index)
-          } else {
-            result = { success: false, message: '未知操作' }
-          }
-          
-          res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify(result));
-          printGreen(`外部源${data.action}操作完成`)
-        } catch (error) {
-          res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify({ success: false, message: error.message }));
+
+    if (routePath === '/api/external-sources' && method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const data = JSON.parse(body)
+        let result
+
+        if (data.action === 'save') {
+          result = await saveExternalSourcesAPI(data.sources)
+        } else if (data.action === 'add') {
+          result = addExternalSourceAPI(data.source)
+        } else if (data.action === 'remove') {
+          result = removeExternalSourceAPI(data.index)
+        } else if (data.action === 'update') {
+          result = await updateExternalSourceAPI(data.index || -1)
+        } else if (data.action === 'setM3u8') {
+          result = setExternalSourceM3u8API(data.index, data.m3u8Url)
+        } else if (data.action === 'importSubscription') {
+          result = await importSubscriptionAPI(data.index)
+        } else {
+          result = { success: false, message: '未知操作' }
         }
-        loading = false
-      })
+
+        res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify(result));
+        printGreen(`外部源${data.action}操作完成`)
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify({ success: false, message: error.message }));
+      }
       return
     }
-    
+
     // 我的播放列表API
-    if (urlPath === '/api/my-playlist' && method === 'GET') {
+    if (routePath === '/api/my-playlist' && method === 'GET') {
       printBlue("API: 获取我的播放列表")
       try {
         const groups = parseInterfaceTxt()
@@ -220,8 +211,8 @@ const server = http.createServer(async (req, res) => {
         const result = applyConfig(groups, config)
         res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
         // 同时返回原始数据和应用配置后的数据
-        res.end(JSON.stringify({ 
-          success: true, 
+        res.end(JSON.stringify({
+          success: true,
           data: result,
           originalData: groups  // 原始未过滤的数据
         }));
@@ -230,11 +221,10 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json;charset=UTF-8' });
         res.end(JSON.stringify({ success: false, message: error.message }));
       }
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/my-playlist-config' && method === 'GET') {
+
+    if (routePath === '/api/my-playlist-config' && method === 'GET') {
       printBlue("API: 获取播放列表配置")
       try {
         const config = readConfig()
@@ -244,11 +234,10 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json;charset=UTF-8' });
         res.end(JSON.stringify({ success: false, message: error.message }));
       }
-      loading = false
       return
     }
-    
-    if (urlPath === '/api/check-update' && method === 'GET') {
+
+    if (routePath === '/api/check-update' && method === 'GET') {
       printBlue("API: 检查更新")
       try {
         const require = createRequire(import.meta.url)
@@ -287,138 +276,126 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: true, currentVersion, latestVersion, hasUpdate }))
         printGreen(`当前版本: ${currentVersion}, 最新版本: ${latestVersion}${hasUpdate ? ' (有更新)' : ' (已是最新)'}`)
       } catch (error) {
+        // 软失败：保持 200，前端通过 success 字段判断
         res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' })
         res.end(JSON.stringify({ success: false, message: error.message }))
         printRed(`检查更新失败: ${error.message}`)
       }
-      loading = false
       return
     }
 
-    if (urlPath === '/api/my-playlist-config' && method === 'POST') {
-      let body = ''
-      req.on('data', chunk => { body += chunk })
-      req.on('end', () => {
-        try {
-          const config = JSON.parse(body)
-          const currentConfig = readConfig()
-          const currentRenameMap = currentConfig.groupRenameMap || {}
-          const nextRenameMap = config.groupRenameMap || {}
-          const currentCustomGroups = currentConfig.customGroups || []
-          const nextCustomGroups = config.customGroups || []
-          const groupConfigChanged =
-            JSON.stringify(currentRenameMap) !== JSON.stringify(nextRenameMap) ||
-            JSON.stringify(currentCustomGroups) !== JSON.stringify(nextCustomGroups)
+    if (routePath === '/api/my-playlist-config' && method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const config = JSON.parse(body)
+        const currentConfig = readConfig()
+        const currentRenameMap = currentConfig.groupRenameMap || {}
+        const nextRenameMap = config.groupRenameMap || {}
+        const currentCustomGroups = currentConfig.customGroups || []
+        const nextCustomGroups = config.customGroups || []
+        const groupConfigChanged =
+          JSON.stringify(currentRenameMap) !== JSON.stringify(nextRenameMap) ||
+          JSON.stringify(currentCustomGroups) !== JSON.stringify(nextCustomGroups)
 
-          if (groupConfigChanged) {
-            const groups = parseInterfaceTxt()
-            const validation = validateGroupConfig(groups, config)
-            if (!validation.valid) {
-              res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
-              res.end(JSON.stringify({ success: false, message: validation.message }));
-              loading = false
-              return
-            }
+        if (groupConfigChanged) {
+          const groups = parseInterfaceTxt()
+          const validation = validateGroupConfig(groups, config)
+          if (!validation.valid) {
+            res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
+            res.end(JSON.stringify({ success: false, message: validation.message }));
+            return
           }
-
-          const result = saveConfig(config)
-          res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify(result));
-          printGreen("播放列表配置已保存")
-        } catch (error) {
-          res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
-          res.end(JSON.stringify({ success: false, message: error.message }));
         }
-        loading = false
-      })
-      return
-    }
-  }
-  
-  // 身份认证
-  if (pass != "") {
-    const urlSplit = url.split("/")
-    if (urlSplit[1] != pass) {
-      printRed(`身份认证失败`)
-      res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
-      res.end(`身份认证失败`); // 发送文件内容
-      loading = false
-      return
-    } else {
-      printGreen("身份认证成功")
-      // 有密码且传入用户信息
-      if (urlSplit.length > 3) {
-        url = url.substring(pass.length + 1)
-      } else {
-        url = urlSplit.length == 2 ? "/" : "/" + urlSplit[urlSplit.length - 1]
+
+        const result = saveConfig(config)
+        res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify(result));
+        printGreen("播放列表配置已保存")
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify({ success: false, message: error.message }));
       }
+      return
     }
+
+    // 未匹配的 /api/* 返回 404，而不是落到频道处理逻辑
+    res.writeHead(404, { 'Content-Type': 'application/json;charset=UTF-8' });
+    res.end(JSON.stringify({ success: false, message: '接口不存在' }));
+    return
+  }
+
+  // 设置密码但未授权访问（非 admin/player/api 路由）：拒绝
+  if (pass !== "" && !passAuthed) {
+    printRed(`身份认证失败`)
+    res.writeHead(403, { 'Content-Type': 'application/json;charset=UTF-8' });
+    res.end(`身份认证失败`);
+    return
+  }
+
+  // 剥离密码前缀后的完整 url（保留查询串），用于频道/接口处理
+  let routeUrl = routePath
+  const queryIndex = url.indexOf('?')
+  if (queryIndex !== -1) {
+    routeUrl += url.substring(queryIndex)
   }
 
   let urlToken = ""
   let urlUserId = ""
-  // 匹配是否存在用户信息
-  if (/\/{1}[^\/\s]{1,}\/{1}[^\/\s]{1,}/.test(url)) {
-    const urlSplit = url.split("/")
+  // 匹配是否存在用户信息 /userId/token/...
+  if (/\/{1}[^\/\s]{1,}\/{1}[^\/\s]{1,}/.test(routeUrl)) {
+    const urlSplit = routeUrl.split("/")
     if (urlSplit.length >= 3) {
       urlUserId = urlSplit[1]
       urlToken = urlSplit[2]
-      url = urlSplit.length == 3 ? "/" : "/" + urlSplit[urlSplit.length - 1]
+      routeUrl = urlSplit.length == 3 ? "/" : "/" + urlSplit[urlSplit.length - 1]
     }
   } else {
     urlUserId = userId
     urlToken = token
   }
 
-  // printGreen("")
-  // printMagenta("请求地址：" + url)
-
   // 允许HEAD、OPTIONS预检请求
   if (method === "HEAD" || method === "OPTIONS") {
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'application/json;charset=UTF-8',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
       'Access-Control-Allow-Headers': '*'
     });
     res.end();
-    loading = false
     return
   }
 
   // 其他非GET/POST请求才报错
   if (method != "GET" && method != "POST") {
-    res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
+    res.writeHead(405, { 'Content-Type': 'application/json;charset=UTF-8' });
     res.end(JSON.stringify({
       data: '请使用GET或POST请求',
     }));
     printRed(`使用非GET/POST请求:${method}`)
-
-    loading = false
     return
   }
 
   const interfaceList = "/,/interface.txt,/m3u,/txt,/playback.xml"
 
   // 接口
-  if (interfaceList.indexOf(url) !== -1) {
-    const interfaceObj = interfaceStr(url, headers, urlUserId, urlToken)
+  if (interfaceList.indexOf(routeUrl) !== -1) {
+    const interfaceObj = interfaceStr(routeUrl, headers, urlUserId, urlToken)
     if (interfaceObj.content == null) {
       interfaceObj.content = "获取失败"
     }
     // 设置响应头
     res.setHeader('Content-Type', interfaceObj.contentType);
-    if (url == "/m3u") {
+    if (routeUrl == "/m3u") {
       res.setHeader('content-disposition', "inline; filename=\"interface.m3u\"");
     }
     res.statusCode = 200;
     res.end(interfaceObj.content); // 发送文件内容
-    loading = false
     return
   }
 
   // 频道
-  const result = await channel(url, urlUserId, urlToken)
+  const result = await channel(routeUrl, urlUserId, urlToken)
 
   // 结果异常
   if (result.code != 302) {
@@ -428,7 +405,6 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'application/json;charset=UTF-8',
     });
     res.end(result.desc)
-    loading = false
     return
   }
 
@@ -438,13 +414,28 @@ const server = http.createServer(async (req, res) => {
   });
 
   res.end()
+})
 
-  loading = false
+// 客户端发送畸形 HTTP 或在请求中途断开时，优雅丢弃连接而不是让进程崩溃
+server.on('clientError', (err, socket) => {
+  if (socket.writable) {
+    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+  } else {
+    socket.destroy()
+  }
+})
+
+// 兜底：任何未捕获的 Promise rejection / 异常只记录日志，不让常驻媒体服务整体退出
+process.on('unhandledRejection', (reason) => {
+  printRed(`未处理的 Promise rejection: ${reason?.message || reason}`)
+})
+process.on('uncaughtException', (err) => {
+  printRed(`未捕获的异常: ${err?.message || err}`)
 })
 
 server.listen(port, async () => {
   const updateInterval = parseInt(programInfoUpdateInterval)
-  
+
   // 定时任务1: 完整更新（咪咕 + 外部源 + 节目单）
   setInterval(async () => {
     printBlue(`准备更新文件 ${getDateTimeStr(new Date())}`)
@@ -495,7 +486,7 @@ server.listen(port, async () => {
   setTimeout(async () => {
     try {
       const sources = externalSourceManager.sources?.sources || []
-      const failedSubs = sources.filter((s, i) => 
+      const failedSubs = sources.filter((s, i) =>
         s.enabled && s.mode === 'subscription' && s.subscriptionUrl && !Array.isArray(s.parsedChannels)
       )
       if (failedSubs.length > 0) {

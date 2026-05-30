@@ -53,22 +53,22 @@ async function getAllChannels(options = {}) {
     }))
     
     // 先合并内置源
+    // 注意：内置源频道用 playURL 字段，不能在此补 url —
+    // 下游 updateData.js 用 `!!channelItem.url` 判定外部源，补 url 会让内置源被误判为外部源。
+    const tagBuiltIn = channel => ({
+      ...channel,
+      source: 'built-in'
+    })
     builtInChannels.forEach(builtInGroup => {
       const existingGroup = allChannels.find(group => group.name === builtInGroup.name)
-      
+
       if (existingGroup) {
-        existingGroup.dataList.push(...builtInGroup.dataList.map(channel => ({
-          ...channel,
-          source: 'built-in'
-        })))
+        existingGroup.dataList.push(...builtInGroup.dataList.map(tagBuiltIn))
       } else {
         allChannels.push({
           ...builtInGroup,
           source: 'built-in',
-          dataList: builtInGroup.dataList.map(channel => ({
-            ...channel,
-            source: 'built-in'
-          }))
+          dataList: builtInGroup.dataList.map(tagBuiltIn)
         })
       }
     })
@@ -94,12 +94,33 @@ async function getAllChannels(options = {}) {
       }
     })
     
+    // 频道级去重：同一分组内，name + 播放地址 完全相同的频道只保留第一个
+    // （合并顺序为 咪咕 > 内置 > 外部，因此优先保留更高优先级的来源）
+    // 只移除完全重复的条目，名称相同但地址不同的频道予以保留
+    let dedupRemoved = 0
+    for (const group of allChannels) {
+      const seen = new Set()
+      group.dataList = group.dataList.filter(ch => {
+        const urlKey = ch.url || ch.playURL || (ch.pID != null ? `migu:${ch.pID}` : '')
+        const key = `${(ch.name || '').trim().toLowerCase()} ${urlKey}`
+        if (seen.has(key)) {
+          dedupRemoved++
+          return false
+        }
+        seen.add(key)
+        return true
+      })
+    }
+    if (dedupRemoved > 0) {
+      printYellow(`频道去重：移除 ${dedupRemoved} 个分组内完全重复的频道`)
+    }
+
     const externalCount = externalChannels.reduce((sum, group) => sum + group.dataList.length, 0)
     const builtInCount = builtInChannels.reduce((sum, group) => sum + group.dataList.length, 0)
     const miguCount = miguChannels.reduce((sum, group) => sum + group.dataList.length, 0)
-    
+
     printGreen(`频道数据获取完成: 咪咕 ${miguCount} 个，内置源 ${builtInCount} 个，外部源 ${externalCount} 个`)
-    
+
     return allChannels
     
   } catch (error) {

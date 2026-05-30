@@ -1857,6 +1857,9 @@
     </div>
 
     <script>
+        // 访问密码模式下，管理页位于 /<pass>/admin，API 也需带上 /<pass> 前缀。
+        // 无密码时为空字符串，等价于直接请求 /api/...
+        const API_PREFIX = window.location.pathname.replace(/\/admin$/, '');
         let allChannels = [];
         let externalConfig = {
             enabled: false,
@@ -1907,7 +1910,7 @@
                 
                 // 加载所有频道
                 console.log('请求频道列表...');
-                const channelsRes = await fetch('/api/channels');
+                const channelsRes = await fetch(API_PREFIX + '/api/channels');
                 if (!channelsRes.ok) {
                     throw new Error(`频道API请求失败: ${channelsRes.status}`);
                 }
@@ -1916,7 +1919,7 @@
                 
                 // 加载外部源配置
                 console.log('请求外部源配置...');
-                const externalRes = await fetch('/api/external-sources');
+                const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                 if (!externalRes.ok) {
                     throw new Error(`外部源API请求失败: ${externalRes.status}`);
                 }
@@ -1926,7 +1929,7 @@
                 
                 // 加载内置源配置
                 console.log('请求内置源配置...');
-                const builtInRes = await fetch('/api/built-in-sources');
+                const builtInRes = await fetch(API_PREFIX + '/api/built-in-sources');
                 if (!builtInRes.ok) {
                     throw new Error(`内置源API请求失败: ${builtInRes.status}`);
                 }
@@ -1936,7 +1939,7 @@
                 
                 // 加载系统配置
                 console.log('请求系统配置...');
-                const systemRes = await fetch('/api/system-config');
+                const systemRes = await fetch(API_PREFIX + '/api/system-config');
                 if (!systemRes.ok) {
                     throw new Error(`系统配置API请求失败: ${systemRes.status}`);
                 }
@@ -2510,7 +2513,7 @@
                 externalConfig.sources.splice(index, 1);
                 
                 // 调用保存API，服务器会自动重新生成播放列表
-                const response = await fetch('/api/external-sources', {
+                const response = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2533,7 +2536,7 @@
                     renderExternalSources();
                     
                     // 重新加载所有频道数据以刷新显示
-                    const channelsRes = await fetch('/api/channels');
+                    const channelsRes = await fetch(API_PREFIX + '/api/channels');
                     if (channelsRes.ok) {
                         allChannels = await channelsRes.json();
                         renderChannels();
@@ -2541,7 +2544,7 @@
                 } else {
                     // 删除失败，恢复数据（需要重新加载配置）
                     showStatus(result.message || '删除失败', 'error');
-                    const externalRes = await fetch('/api/external-sources');
+                    const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                     const externalPayload = await externalRes.json();
                     externalConfig = normalizeExternalConfig(externalPayload);
                     renderExternalSources();
@@ -2549,7 +2552,7 @@
             } catch (error) {
                 showStatus('删除失败: ' + error.message, 'error');
                 // 恢复数据
-                const externalRes = await fetch('/api/external-sources');
+                const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                 const externalPayload = await externalRes.json();
                 externalConfig = normalizeExternalConfig(externalPayload);
                 renderExternalSources();
@@ -2593,7 +2596,7 @@
             try {
                 // 先保存配置，确保后端索引同步
                 showStatus(`正在保存配置...`, 'info');
-                const saveResponse = await fetch('/api/external-sources', {
+                const saveResponse = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2609,7 +2612,7 @@
                 // 保存成功后执行更新
                 showStatus(`正在提取 ${sourceName} 的 m3u8 链接...`, 'info');
                 
-                const response = await fetch('/api/external-sources', {
+                const response = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2620,7 +2623,7 @@
                 const result = await response.json();
                 
                 // 重新加载配置确保UI同步（无论成功失败都加载）
-                const externalRes = await fetch('/api/external-sources');
+                const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                 const externalPayload = await externalRes.json();
                 externalConfig = normalizeExternalConfig(externalPayload);
                 
@@ -2632,7 +2635,7 @@
                     showStatus(message, 'success');
                     
                     // 重新加载所有频道数据以刷新显示
-                    const channelsRes = await fetch('/api/channels');
+                    const channelsRes = await fetch(API_PREFIX + '/api/channels');
                     if (channelsRes.ok) {
                         allChannels = await channelsRes.json();
                         renderChannels();
@@ -2678,7 +2681,7 @@
             try {
                 // 先保存配置
                 showStatus(`正在保存配置...`, 'info');
-                const saveResponse = await fetch('/api/external-sources', {
+                const saveResponse = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2694,7 +2697,7 @@
                 // 执行抓取
                 showStatus(`正在抓取 ${sourceName} 的 m3u8 链接...`, 'info');
                 
-                const response = await fetch('/api/external-sources', {
+                const response = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2705,7 +2708,7 @@
                 const result = await response.json();
                 
                 // 重新加载配置确保UI同步
-                const externalRes = await fetch('/api/external-sources');
+                const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                 const externalPayload = await externalRes.json();
                 externalConfig = normalizeExternalConfig(externalPayload);
                 
@@ -2717,7 +2720,7 @@
                     showStatus(message, 'success');
                     
                     // 重新加载所有频道数据以刷新显示
-                    const channelsRes = await fetch('/api/channels');
+                    const channelsRes = await fetch(API_PREFIX + '/api/channels');
                     if (channelsRes.ok) {
                         allChannels = await channelsRes.json();
                         renderChannels();
@@ -2754,7 +2757,7 @@
             try {
                 showStatus('正在保存...', 'info');
                 
-                const response = await fetch('/api/external-sources', {
+                const response = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -2768,7 +2771,7 @@
                     renderExternalSources(); // 保存成功后刷新UI
                     
                     // 重新加载所有频道数据以刷新显示
-                    const channelsRes = await fetch('/api/channels');
+                    const channelsRes = await fetch(API_PREFIX + '/api/channels');
                     if (channelsRes.ok) {
                         allChannels = await channelsRes.json();
                         renderChannels();
@@ -2807,7 +2810,7 @@
             try {
                 // 先保存配置
                 showStatus('正在保存配置...', 'info');
-                const saveResponse = await fetch('/api/external-sources', {
+                const saveResponse = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'save', sources: externalConfig })
@@ -2821,7 +2824,7 @@
                 // 执行导入
                 showStatus(`正在获取并解析 ${sourceName} 的播放列表...`, 'info');
                 
-                const response = await fetch('/api/external-sources', {
+                const response = await fetch(API_PREFIX + '/api/external-sources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'importSubscription', index })
@@ -2830,7 +2833,7 @@
                 const result = await response.json();
                 
                 // 重新加载配置
-                const externalRes = await fetch('/api/external-sources');
+                const externalRes = await fetch(API_PREFIX + '/api/external-sources');
                 const externalPayload = await externalRes.json();
                 externalConfig = normalizeExternalConfig(externalPayload);
                 
@@ -2838,7 +2841,7 @@
                     showStatus(`${sourceName} 导入成功！共 ${result.channelCount || 0} 个频道，已同步到频道列表`, 'success');
                     
                     // 刷新频道列表
-                    const channelsRes = await fetch('/api/channels');
+                    const channelsRes = await fetch(API_PREFIX + '/api/channels');
                     if (channelsRes.ok) {
                         allChannels = await channelsRes.json();
                         renderChannels();
@@ -3001,7 +3004,7 @@ if(success){
                     enableH265: document.getElementById('sysEnableH265').checked
                 };
 
-                const response = await fetch('/api/system-config', {
+                const response = await fetch(API_PREFIX + '/api/system-config', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -3031,7 +3034,7 @@ if(success){
             updateInfo.style.display = 'none';
 
             try {
-                const response = await fetch('/api/check-update');
+                const response = await fetch(API_PREFIX + '/api/check-update');
                 const result = await response.json();
 
                 if (!result.success) {
@@ -3073,7 +3076,7 @@ if(success){
             try {
                 showStatus('正在重启服务，请稍候...', 'success');
 
-                const response = await fetch('/api/restart', {
+                const response = await fetch(API_PREFIX + '/api/restart', {
                     method: 'POST'
                 });
 
@@ -3112,7 +3115,7 @@ if(success){
 
         async function loadMyPlaylist(resetView = true) {
             try {
-                const response = await fetch('/api/my-playlist');
+                const response = await fetch(API_PREFIX + '/api/my-playlist');
                 const result = await response.json();
                 console.log('我的播放列表API返回:', result);
                 
@@ -3144,7 +3147,7 @@ if(success){
 
         async function loadMyPlaylistConfig() {
             try {
-                const response = await fetch('/api/my-playlist-config');
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config');
                 const result = await response.json();
                 
                 if (result.success) {
@@ -3425,7 +3428,7 @@ if(success){
             
             // 自动保存配置
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3453,7 +3456,7 @@ if(success){
             
             // 自动保存配置
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3520,7 +3523,7 @@ if(success){
         }
 
         async function fetchExternalConfigSnapshot() {
-            const response = await fetch('/api/external-sources');
+            const response = await fetch(API_PREFIX + '/api/external-sources');
             const payload = await response.json();
             if (!response.ok || payload.success === false) {
                 throw new Error(payload.message || '获取自定义源配置失败');
@@ -3529,7 +3532,7 @@ if(success){
         }
 
         async function saveExternalConfigSnapshot(config) {
-            const response = await fetch('/api/external-sources', {
+            const response = await fetch(API_PREFIX + '/api/external-sources', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'save', sources: config })
@@ -3539,7 +3542,7 @@ if(success){
                 throw new Error(result.message || '保存自定义源配置失败');
             }
             externalConfig = await fetchExternalConfigSnapshot();
-            const channelsResponse = await fetch('/api/channels');
+            const channelsResponse = await fetch(API_PREFIX + '/api/channels');
             if (channelsResponse.ok) {
                 allChannels = await channelsResponse.json();
             }
@@ -3603,7 +3606,7 @@ if(success){
             }
 
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3799,7 +3802,7 @@ if(success){
             
             // 自动保存配置并重新加载数据
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3826,7 +3829,7 @@ if(success){
             
             // 自动保存配置并重新加载数据
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3869,7 +3872,7 @@ if(success){
 
             // 先保存配置到服务器
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3902,7 +3905,7 @@ if(success){
 
             // 先保存配置到服务器
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3956,7 +3959,7 @@ if(success){
 
             // 先保存配置到服务器
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -3979,7 +3982,7 @@ if(success){
 
         async function saveMyPlaylist() {
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -4118,7 +4121,7 @@ if(success){
             });
 
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -4163,7 +4166,7 @@ if(success){
             });
 
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)
@@ -4220,7 +4223,7 @@ if(success){
             });
 
             try {
-                const response = await fetch('/api/my-playlist-config', {
+                const response = await fetch(API_PREFIX + '/api/my-playlist-config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(myPlaylistConfig)

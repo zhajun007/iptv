@@ -1,4 +1,5 @@
-import { readFileSync, existsSync, writeFileSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
+import { writeJsonFileSync } from "./fileUtil.js"
 import { printBlue, printGreen, printYellow, printRed } from "./colorOut.js"
 import { extractM3u8FromWeb } from "./webSourceExtractor.js"
 
@@ -67,7 +68,7 @@ class BuiltInSourceManager {
    */
   saveCache() {
     try {
-      writeFileSync(this.cachePath, JSON.stringify(this.cache, null, 2), 'utf-8')
+      writeJsonFileSync(this.cachePath, this.cache)
     } catch (error) {
       printRed(`保存内置源缓存失败: ${error.message}`)
     }

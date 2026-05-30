@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
-import { readFileSync, writeFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
+import { writeJsonFileSync } from "./fileUtil.js"
 import { printBlue, printGreen, printYellow, printRed } from "./colorOut.js"
 
 const CONFIG_PATH = `${process.cwd()}/my-playlist-config.json`
@@ -64,8 +65,7 @@ export function readConfig() {
  */
 export function saveConfig(config) {
   try {
-    const content = JSON.stringify(config, null, 2)
-    writeFileSync(CONFIG_PATH, content, 'utf-8')
+    writeJsonFileSync(CONFIG_PATH, config)
     printGreen("播放列表配置已保存")
     return { success: true }
   } catch (error) {

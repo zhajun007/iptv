@@ -7,5 +7,6 @@
   "pass": "",
   "enableHDR": true,
   "enableH265": true,
-  "programInfoUpdateInterval": "8"
+  "programInfoUpdateInterval": "8",
+  "refreshToken": true
 }

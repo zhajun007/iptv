@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
 import path from "node:path"
+import { writeJsonFileSync } from "./fileUtil.js"
 import { printBlue, printGreen, printGrey, printRed, printYellow } from "./colorOut.js"
 import { extractM3u8FromWeb, validateM3u8 } from "./webSourceExtractor.js"
 import fetch from 'node-fetch'
@@ -245,7 +246,7 @@ class ExternalSourceManager {
    */
   saveSources(sources = this.sources) {
     try {
-      writeFileSync(EXTERNAL_SOURCES_PATH, JSON.stringify(sources, null, 2), 'utf-8')
+      writeJsonFileSync(EXTERNAL_SOURCES_PATH, sources)
       this.sources = sources
       return { success: true }
     } catch (error) {

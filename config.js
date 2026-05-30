@@ -17,31 +17,54 @@ function loadSystemConfig() {
   return {}
 }
 
-const systemConfig = loadSystemConfig()
+// 解析布尔值：支持 system-config.json 的真布尔值，以及环境变量字符串 "false"/"0"/"off"/"no"
+// （修复历史问题：旧写法 `env || true` 导致环境变量永远无法关闭开关）
+function parseBool(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback
+  if (typeof value === 'boolean') return value
+  const str = String(value).trim().toLowerCase()
+  return str !== 'false' && str !== '0' && str !== 'off' && str !== 'no'
+}
 
-// 用户id
-const userId = systemConfig.userId || process.env.muserId || ""
-// 用户token 可以使用网页登录获取
-const token = systemConfig.token || process.env.mtoken || ""
-// 本地运行端口号
-const port = systemConfig.port || process.env.mport || 1905
-// 公网/自定义访问地址
-const host = systemConfig.host || process.env.mhost || ""
-// 画质
-// 4蓝光(1080p，需要登录且账号有VIP)
-// 3高清(720p)
-// 2标清(480p)
-const rateType = systemConfig.rateType || process.env.mrateType || 3
-// 是否刷新token，可能是导致封号的原因
-// const refreshToken = process.env.mrefreshToken || true
-const debug = process.env.mdebug || false
-// 访问密码 大小写字母和数字 添加后访问格式 http://ip:port/mpass/...
-const pass = systemConfig.pass || process.env.mpass || ""
-// 是否开启hdr
-const enableHDR = systemConfig.enableHDR !== undefined ? systemConfig.enableHDR : (process.env.menableHDR || true)
-// 是否开启h265(原画画质)，开启可能存在兼容性问题，比如浏览器播放没有画面
-const enableH265 = systemConfig.enableH265 !== undefined ? systemConfig.enableH265 : (process.env.menableH265 || true)
-// 节目信息更新间隔 单位小时 不建议设置太短
-const programInfoUpdateInterval = systemConfig.programInfoUpdateInterval || process.env.mupdateInterval || "8"
+// 导出值使用 let，配合 reloadConfig() 实现热更新：
+// ESM 命名导出是实时绑定，重新赋值后所有 import 方都会读到新值。
+// 注意：port、programInfoUpdateInterval 在 server.listen / setInterval 时已被读取，
+// 热更新不会改变已启动的监听端口与定时器周期，这两项仍需重启生效。
+let userId, token, port, host, rateType, debug, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken
 
-export { userId, token, port, host, rateType, debug/* , refreshToken */, pass, enableHDR, programInfoUpdateInterval, enableH265 }
+function applyConfig(systemConfig) {
+  // 用户id
+  userId = systemConfig.userId || process.env.muserId || ""
+  // 用户token 可以使用网页登录获取
+  token = systemConfig.token || process.env.mtoken || ""
+  // 本地运行端口号
+  port = systemConfig.port || process.env.mport || 1905
+  // 公网/自定义访问地址
+  host = systemConfig.host || process.env.mhost || ""
+  // 画质
+  // 4蓝光(1080p，需要登录且账号有VIP)
+  // 3高清(720p)
+  // 2标清(480p)
+  rateType = systemConfig.rateType || process.env.mrateType || 3
+  debug = process.env.mdebug || false
+  // 访问密码 大小写字母和数字 添加后访问格式 http://ip:port/mpass/...
+  pass = systemConfig.pass || process.env.mpass || ""
+  // 是否开启hdr
+  enableHDR = systemConfig.enableHDR !== undefined ? systemConfig.enableHDR : parseBool(process.env.menableHDR, true)
+  // 是否开启h265(原画画质)，开启可能存在兼容性问题，比如浏览器播放没有画面
+  enableH265 = systemConfig.enableH265 !== undefined ? systemConfig.enableH265 : parseBool(process.env.menableH265, true)
+  // 节目信息更新间隔 单位小时 不建议设置太短
+  programInfoUpdateInterval = systemConfig.programInfoUpdateInterval || process.env.mupdateInterval || "8"
+  // 是否每月刷新token（可能是导致封号的原因，可关闭）
+  refreshToken = systemConfig.refreshToken !== undefined ? systemConfig.refreshToken : parseBool(process.env.mrefreshToken, true)
+}
+
+applyConfig(loadSystemConfig())
+
+// 重新加载系统配置（保存系统配置后调用，避免必须重启进程）
+function reloadConfig() {
+  applyConfig(loadSystemConfig())
+  return { userId, token, port, host, rateType, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken }
+}
+
+export { userId, token, port, host, rateType, debug, pass, enableHDR, programInfoUpdateInterval, enableH265, refreshToken, reloadConfig }
