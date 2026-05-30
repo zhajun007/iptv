@@ -40,8 +40,57 @@ function parseM3uContent(content) {
       })
     }
   }
-  
+
   return channels
+}
+
+/**
+ * 用 GBK 解码字节，环境无 GBK 解码器时回退宽松 UTF-8
+ */
+function decodeGbk(buffer) {
+  try {
+    return new TextDecoder('gbk').decode(buffer)
+  } catch {
+    return buffer.toString('utf-8')
+  }
+}
+
+/**
+ * 解码订阅内容字节，处理非 UTF-8 编码。
+ * node-fetch 的 response.text() 始终按 UTF-8 解码，部分中文 IPTV 订阅是 GBK/GB2312，
+ * 直接 .text() 会导致分组名/频道名乱码。这里按优先级判定编码：
+ * 1) BOM 嗅探（UTF-8 / UTF-16）；2) Content-Type 的 charset；3) 严格 UTF-8 试解，失败回退 GBK。
+ * @param {Buffer} buffer - 响应原始字节
+ * @param {string|null} contentType - 响应 Content-Type 头
+ * @returns {string}
+ */
+function decodeSubscriptionBody(buffer, contentType) {
+  if (!buffer || buffer.length === 0) return ''
+
+  // 1. BOM 嗅探
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return buffer.toString('utf-8', 3) // 去掉 UTF-8 BOM
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return new TextDecoder('utf-16le').decode(buffer)
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    return new TextDecoder('utf-16be').decode(buffer)
+  }
+
+  // 2. Content-Type 声明的 charset
+  const charset = (contentType || '').toLowerCase().match(/charset=\s*"?([\w-]+)"?/)?.[1]
+  if (charset) {
+    if (/^(gb2312|gb18030|gbk)$/.test(charset)) return decodeGbk(buffer)
+    if (/^utf-?8$/.test(charset)) return buffer.toString('utf-8')
+  }
+
+  // 3. 启发式：先按严格 UTF-8 试解，遇到非法字节说明不是 UTF-8，回退 GBK
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+  } catch {
+    return decodeGbk(buffer)
+  }
 }
 
 /**
@@ -111,7 +160,9 @@ async function fetchAndParseM3u(subscriptionUrl) {
         throw new Error(`HTTP ${response.status}${response.statusText ? ' ' + response.statusText : ''}`)
       }
 
-      const content = await response.text()
+      // 读原始字节并按编码解码（兼容 GBK/GB2312 订阅，避免分组/频道名乱码）
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const content = decodeSubscriptionBody(buffer, response.headers.get('content-type'))
       const channels = parseM3uContent(content)
 
       if (channels.length === 0) {
