@@ -24,7 +24,7 @@
   </tr>
 </table>
 
-**当前版本：v2.0.0**
+**当前版本：v2.0.1**
 
 > 一个基于 Docker 部署的 IPTV 直播源管理和分发系统，支持 GUI 管理，内置咪咕视频源抓取，支持外部直播源管理及自定义直播源订阅。
 >
@@ -179,6 +179,11 @@ docker run -d -p 1905:1905 \
 ---
 
 ## 📋 更新日志
+
+### v2.0.1 (2026-05-31)
+- 🐛 **分组上移/下移后选中跟随**：之前移动分组后，左侧选中仍停在原位置（变成了被换上来的另一个分组），要重新点选才能继续移动；现在选中会**跟随被移动的分组**，可连续点上移/下移（例如把某分组一路移到最后）
+- 💾 **配置持久化（升级不再丢配置）**：运行时数据（咪咕账号、外部订阅源、我的频道分组顺序/隐藏/归类/排序等）改为集中存放，并支持 `mdataDir` 自定义目录。**镜像现默认写入 `/migu/data` 并声明为数据卷**，因此即使不改 compose，常规 `docker compose pull && up -d` 升级也会自动复用卷、不再丢配置；仍推荐用 `-v ./data:/migu/data` 绑定到宿主机便于备份。⚠️ 从旧版（数据原在 `/migu`）**首次升级会迁移丢一次**，升级前请先用 `docker cp` 备份 `system-config.json` / `my-playlist-config.json` / `external-sources.json`（详见部署说明）
+- 📝 **README 配置说明优化**：拆分为「常用配置」（新手够用）+ 折叠的「完整配置表」；补全此前未文档化的环境变量（`madminPath` / `mrefreshToken` / `mdataDir` / `menableHDR` / `menableH265` / `mupdateInterval`）；部署示例补上持久化卷与 `init`
 
 ### v2.0.0 (2026-05-30)
 本次为**安全与稳定性大版本**，并新增多项管理功能（自 v1.8.2 起的全部改动）。
@@ -380,7 +385,7 @@ docker run -d -p 1905:1905 \
 | mhost | | 公网 / NAS 访问地址，如 `http://192.168.1.100:1905` |
 | mrateType | 3 | 画质：2 标清 / 3 高清 / 4 蓝光(需 VIP) |
 | mpass | | 访问密码（可选），设置后访问 `http://ip:port/密码/...` |
-| mdataDir | | 持久化目录；**Docker 强烈建议设为 `/migu/data` 并挂载卷**，升级镜像后配置不丢失 |
+| mdataDir | /migu/data | 数据持久化目录（**镜像已默认此值并声明数据卷**）；建议再用 `-v ./data:/migu/data` 绑定到宿主机便于备份 |
 
 > 💡 进阶项（管理页路径、HDR / H.265、更新间隔、token 刷新等）可在 **管理后台 →「系统配置」** 页里改，保存即时生效；完整环境变量见下方折叠表。
 
@@ -400,7 +405,7 @@ docker run -d -p 1905:1905 \
 | menableH265 | true | boolean | 是否开启 H.265 原画<br>有兼容性问题（如浏览器无画面）时设 `false` 关闭 |
 | mupdateInterval | 8 | number | 节目单 / 源更新间隔（小时），不建议过短 |
 | mrefreshToken | true | boolean | 是否每月刷新咪咕 token<br>**可能导致封号**，可设 `false` 关闭 |
-| mdataDir | 当前目录 | string | 配置 / 数据持久化目录（**仅环境变量可设**）<br>Docker 部署建议设为 `/migu/data` 并挂载卷，升级镜像后配置不丢失 |
+| mdataDir | 镜像内 `/migu/data`；node 直跑为当前目录 | string | 配置 / 数据持久化目录（**仅环境变量可设**）<br>镜像已默认 `/migu/data` 并声明数据卷；建议 `-v ./data:/migu/data` 绑定宿主机便于备份 |
 
 > 说明：除 `mdataDir`/`mport` 外，以上多数项也可在 `system-config.json` 或管理后台「系统配置」页修改；后台保存即时生效（端口与更新间隔需重启）。
 
