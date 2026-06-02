@@ -265,7 +265,8 @@ const server = http.createServer(async (req, res) => {
           } catch (e) {
             clearTimeout(timer)
             lastError = e
-            printRed(`镜像 ${targetUrl} 失败: ${e.message}`)
+            // 单个镜像失败属正常回退（会自动尝试下一个），用黄色警告；全部失败才在下方标红
+            printYellow(`镜像 ${targetUrl} 失败，尝试下一个: ${e.message}`)
           }
         }
         if (!remotePkg) throw lastError || new Error('所有镜像均不可用')
