@@ -115,6 +115,11 @@ yaml = yaml.replace(
   /akiralereal\/iptv:\d+\.\d+\n/,
   `akiralereal/iptv:${newMajor}.${newMinor}\n`
 )
+// 主版本滚动标签（如 :2）——此前漏更新，导致 v2.x 仍打成 :1
+yaml = yaml.replace(
+  /akiralereal\/iptv:\d+\n/,
+  `akiralereal/iptv:${newMajor}\n`
+)
 writeFileSync(yamlPath, yaml)
 console.log(`✔ .github/workflows/push_docker.yaml`)
 

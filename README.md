@@ -24,7 +24,7 @@
   </tr>
 </table>
 
-**当前版本：v2.1.0**
+**当前版本：v2.2.0**
 
 > 一个基于 Docker 部署的 IPTV 直播源管理和分发系统，支持 GUI 管理，内置咪咕视频源抓取，支持外部直播源管理及自定义直播源订阅。
 >
@@ -179,6 +179,13 @@ docker run -d -p 1905:1905 \
 ---
 
 ## 📋 更新日志
+
+### v2.2.0 (2026-06-05)
+- 🆕 **订阅源支持 txt 格式**：订阅模式现自动识别播放列表格式，除 m3u/m3u8 外也支持 txt（diyp/TVBox：`分组,#genre#` / `频道名,地址`，一个频道用 `#` 连多个备用源时取首个），无需额外设置；兼容 GBK/GB2312 编码
+- 🆕 **内容开关 / 空白部署**：新增 `mblank` 空白模式总开关 + `menableMigu` / `menableBuiltInSources` / `menableBuiltInSubscriptions` 三个细粒度开关（环境变量或管理后台「系统配置」勾选；细粒度优先于 `mblank`；**默认全开，老用户无感**）。一行 `mblank=true` 即得到纯频道管理的空白部署，或单独关掉自带的内置源 / 内置订阅源，避免与自建源同名分组撞车
+- 🆕 **后台「🧹 一键空白」**：系统配置页新增上述三个开关与一键空白按钮，保存后自动重新生成播放列表、无需重启即时生效
+- 🛠️ **内置订阅源可彻底删除**：自带的「港澳地方频道 / 全球频道」订阅改为「只播种一次」，删除后重启不再自动复活（尊重用户删除）；关闭内置订阅时抓取层与输出层一并跳过，不再无谓联网下载
+- 🐛 **修复 Docker 主版本标签**：发布镜像的主版本滚动标签此前一直错打成 `:1`（实际是 v2.x），现修正为 `:2`，并修 `bump-version.js` 使其今后自动更新该标签
 
 ### v2.1.0 (2026-06-02)
 - 🆕 **单频道重命名**：频道详情弹窗可给任意频道自定义显示名（清空或改回原名即恢复）；只改显示名、不动 `tvg-name`，不影响 EPG 匹配。适合统一不同订阅源对同一频道的不同命名
@@ -413,6 +420,10 @@ docker run -d -p 1905:1905 \
 | menableH265 | true | boolean | 是否开启 H.265 原画<br>有兼容性问题（如浏览器无画面）时设 `false` 关闭 |
 | mupdateInterval | 8 | number | 节目单 / 源更新间隔（小时），不建议过短 |
 | mrefreshToken | true | boolean | 是否每月刷新咪咕 token<br>**可能导致封号**，可设 `false` 关闭 |
+| mblank | false | boolean | 空白模式总开关，设 `true` 后下面三项内容开关**默认翻转为关**（一行得到空白部署）<br>细粒度开关显式设值时优先于本项，如 `mblank=true` + `menableMigu=true` 可单独保留咪咕 |
+| menableMigu | true | boolean | 是否启用咪咕源（CCTV/卫视抓取 + 体育赛事 + EPG + token 刷新）<br>设 `false` 后仅分发内置 / 外部源；**体育赛事、回放、咪咕 EPG 随之不可用** |
+| menableBuiltInSources | true | boolean | 是否启用内置单频道源（纬来体育 / Red Bull / 4K 卫视 等）<br>设 `false` 不加载也不抓取 |
+| menableBuiltInSubscriptions | true | boolean | 是否启用内置订阅源（港澳地方频道 / 全球频道）<br>设 `false` 不加入；已添加的可在「源管理」删除，删后不再复活 |
 | mdataDir | 镜像内 `/migu/data`；node 直跑为当前目录 | string | 配置 / 数据持久化目录（**仅环境变量可设**）<br>镜像已默认 `/migu/data` 并声明数据卷；建议 `-v ./data:/migu/data` 绑定宿主机便于备份 |
 
 > 说明：除 `mdataDir`/`mport` 外，以上多数项也可在 `system-config.json` 或管理后台「系统配置」页修改；后台保存即时生效（端口与更新间隔需重启）。
@@ -420,6 +431,32 @@ docker run -d -p 1905:1905 \
 </details>
 
 ### 高级功能详解
+
+#### 🧹 空白部署 / 纯频道管理（内容开关）
+
+默认会自带咪咕源、内置单频道源（纬来体育 / Red Bull / 4K 卫视等）和内置订阅源（港澳 / 全球）。如果你只想用自己的源、要一个干净的环境（也避免自建源与自带源**同名分组撞车**），可以用内容开关把它们关掉。
+
+**一个总开关 + 三个细粒度开关**（细粒度显式设值时优先于总开关；全部默认开，老用户无需理会）：
+
+| 需求 | 配置 |
+| --- | --- |
+| 彻底空白，自己加源 | `mblank=true` |
+| 空白但保留咪咕核心 | `mblank=true` + `menableMigu=true` |
+| 只去掉自带的额外源 / 订阅 | `menableBuiltInSources=false` + `menableBuiltInSubscriptions=false` |
+| 关掉其中某一项 | 对应 `menableMigu` / `menableBuiltInSources` / `menableBuiltInSubscriptions` 设 `false` |
+
+compose 示例（彻底空白）：
+
+```yaml
+environment:
+  - mblank=true
+```
+
+也可在 **管理后台 →「系统配置」** 勾选这三个开关，或点 **「🧹 一键空白」** 一键关闭，保存后自动重新生成播放列表、即时生效（无需重启）。
+
+> ⚠️ 关闭咪咕（`menableMigu=false`）后，**体育赛事、回放、咪咕 EPG（节目单）将不可用**，历史播放列表里的咪咕频道直链也会失效——这是纯频道管理模式的预期表现。
+>
+> 💡 关掉内置订阅源后，「源管理」里已存在的港澳 / 全球订阅可手动删除，**删除后重启不会再自动加回来**。
 
 #### 📡 公网地址配置 (mhost)
 
