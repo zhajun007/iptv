@@ -1719,7 +1719,7 @@
             <div class="panel active">
                 <div class="my-playlist-header">
                     <div class="my-playlist-info">
-                        <h3>📺 我的频道</h3>
+                        <h3>📺 我的频道 <span id="myChannelTotal" style="font-size: 14px; font-weight: normal; color: #1890ff;"></span></h3>
                         <p class="my-playlist-hint">💡 点击频道名称可查看详情，并一键用 VLC / IINA / PotPlayer 打开播放</p>
                     </div>
                     <div class="my-playlist-actions">
@@ -3350,6 +3350,15 @@ if(success){
         function renderMyPlaylist() {
             renderGroupLists();
             renderGroupDetail();
+            updateMyChannelTotal();
+        }
+
+        // 更新"我的频道"标题后的总频道数
+        function updateMyChannelTotal() {
+            const el = document.getElementById('myChannelTotal');
+            if (!el) return;
+            const total = myPlaylistData.reduce((sum, g) => sum + (g.channels ? g.channels.length : 0), 0);
+            el.textContent = `（共 ${total} 个频道）`;
         }
 
         function renderGroupLists() {
