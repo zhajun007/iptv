@@ -18,3 +18,6 @@ pe-cache.json
 
 # 持久化数据目录（mdataDir 指向时）
 data/
+
+# probe-m3u.mjs 探活脚本生成的报告
+probe-report.md
