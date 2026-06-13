@@ -1,7 +1,7 @@
 import { getAllChannels, updateExternalSources, updateBuiltInSources, externalSourceManager } from "./channelMerger.js"
 import { appendFile, appendFileSync, copyFileSync, renameFileSync, writeFile, writeFileSync } from "./fileUtil.js"
 import { updatePlaybackData } from "./playback.js"
-import { refreshToken as enableTokenRefresh, host, pass, token, userId, enableMigu } from "../config.js"
+import { refreshToken as enableTokenRefresh, host, pass, token, userId, enableMigu, externalLogoBase } from "../config.js"
 import refreshToken from "./refreshToken.js"
 import { printGreen, printRed, printYellow, printBlue } from "./colorOut.js"
 import { getDateString } from "./time.js"
@@ -124,7 +124,16 @@ async function updateTV(hours, options = {}) {
       
       const isBuiltIn = channelItem.source === 'built-in'
       const isExternal = channelItem.source === 'external' || !!channelItem.url
-      const logoUrl = channelItem.pics?.highResolutionH || channelItem.logo || ""
+      let logoUrl = channelItem.pics?.highResolutionH || channelItem.logo || ""
+      // 外部/精选频道（IPTV.m3u 等）多数没台标。优先级：m3u 手写(channelItem.logo，上面已取) >
+      // 本地 logos/<中文名>.png（用户自放，持久化在数据目录，仅查本地文件不联网）> fanmingming 兜底 > 空。
+      if (!logoUrl && (isExternal || isBuiltIn)) {
+        if (existsSync(dataPath(`logos/${channelItem.name}.png`))) {
+          logoUrl = `\${replace}/logos/${encodeURIComponent(channelItem.name)}.png`
+        } else if (externalLogoBase) {
+          logoUrl = `${externalLogoBase}${encodeURIComponent(channelItem.name)}.png`
+        }
+      }
       
       // 内置源使用playURL字段，外部源使用url字段，咪咕源构造URL
       let playUrl

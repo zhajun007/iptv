@@ -1,5 +1,5 @@
 import http from "node:http"
-import { readFileSync } from "node:fs"
+import { readFileSync, mkdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import fetch from 'node-fetch'
 import { adminPath, host, pass, port, programInfoUpdateInterval, token, userId, enableMigu, enableBuiltInSubscriptions } from "./config.js";
@@ -7,6 +7,7 @@ import { getDateTimeStr } from "./utils/time.js";
 import update from "./utils/updateData.js";
 import { printBlue, printGreen, printMagenta, printRed, printYellow } from "./utils/colorOut.js";
 import { channel, interfaceStr } from "./utils/appUtils.js";
+import { dataPath } from "./utils/paths.js";
 import { getChannelsAPI, getExternalSourcesAPI, saveExternalSourcesAPI,
          addExternalSourceAPI, removeExternalSourceAPI, updateExternalSourceAPI,
          setExternalSourceM3u8API, importSubscriptionAPI, getBuiltInSourcesAPI } from "./utils/adminAPI.js";
@@ -18,6 +19,11 @@ import { GITHUB_RAW_MIRRORS, isBuiltInSubscriptionSource } from "./utils/externa
 
 // 运行时长
 var hours = 0
+
+// 本地台标文件夹：用户把 <频道名>.png 放进数据目录的 logos/，优先于 fanmingming 兜底。
+// 放 mdataDir 下随数据卷持久化；启动时建好，方便用户找到位置。
+const LOGOS_DIR = dataPath('logos')
+try { mkdirSync(LOGOS_DIR, { recursive: true }) } catch (e) { /* 已存在或无法创建，读写时再报 */ }
 
 // 读取请求体（Promise 化，避免回调式写法导致的释放/死锁问题）
 // 注意：必须先把所有 Buffer 块拼接、再整体按 UTF-8 解码。
@@ -371,6 +377,30 @@ const server = http.createServer(async (req, res) => {
     printRed(`身份认证失败`)
     res.writeHead(403, { 'Content-Type': 'application/json;charset=UTF-8' });
     res.end(`身份认证失败`);
+    return
+  }
+
+  // 本地台标：/logos/<文件名>（也兼容前面带 /userId/token 段的情况），从数据目录 logos/ 读取。
+  // 必须放在下方「用户段解析」之前，否则 /logos/x.png 会被当成 /userId/token 拆掉。
+  const logosIdx = routePath.indexOf('/logos/')
+  if (logosIdx !== -1) {
+    const logoName = decodeURIComponent(routePath.slice(logosIdx + '/logos/'.length))
+    if (!logoName || logoName.includes('/') || logoName.includes('\\') || logoName.includes('..')) {
+      res.writeHead(400); res.end(); return
+    }
+    try {
+      const buf = readFileSync(dataPath(`logos/${logoName}`))
+      const ext = logoName.slice(logoName.lastIndexOf('.') + 1).toLowerCase()
+      const mime = ext === 'png' ? 'image/png'
+        : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg'
+        : ext === 'webp' ? 'image/webp'
+        : ext === 'svg' ? 'image/svg+xml'
+        : 'application/octet-stream'
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' })
+      res.end(buf)
+    } catch (e) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('logo not found')
+    }
     return
   }
 

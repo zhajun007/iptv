@@ -40,7 +40,7 @@ function sanitizeSegment(value, fallback) {
 // ESM 命名导出是实时绑定，重新赋值后所有 import 方都会读到新值。
 // 注意：port、programInfoUpdateInterval 在 server.listen / setInterval 时已被读取，
 // 热更新不会改变已启动的监听端口与定时器周期，这两项仍需重启生效。
-let userId, token, port, host, rateType, debug, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath
+let userId, token, port, host, rateType, debug, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath, externalLogoBase
 // 内容开关：咪咕核心 / 内置单频道源 / 内置订阅源。默认全开（老用户零感知）
 let enableMigu, enableBuiltInSources, enableBuiltInSubscriptions
 
@@ -71,6 +71,11 @@ function applyConfig(systemConfig) {
   refreshToken = systemConfig.refreshToken !== undefined ? systemConfig.refreshToken : parseBool(process.env.mrefreshToken, true)
   // 管理页面自定义路径（默认 admin）：改名后用 /<adminPath> 访问后台，裸 /admin 失效
   adminPath = sanitizeSegment(systemConfig.adminPath || process.env.madminPath, 'admin')
+  // 外部/精选频道无台标时，按中文名兜底的台标 CDN 基址（默认 fanmingming，留空字符串则关闭）。
+  // 仅写进 m3u 由播放器侧拉取静态图，服务器不发请求；故默认开。空值用 !== undefined 判定以允许显式关闭。
+  externalLogoBase = systemConfig.externalLogoBase !== undefined
+    ? systemConfig.externalLogoBase
+    : (process.env.mexternalLogoBase !== undefined ? process.env.mexternalLogoBase : "https://live.fanmingming.com/tv/")
 
   // 空白模式总开关：开启后下面三项内容开关「默认」翻转为关（一行得到空白 docker）。
   // 优先级：细粒度开关显式值 > 总开关推出的默认 > 全开。所以可 mblank=true + menableMigu=true 单独留咪咕。
@@ -89,7 +94,7 @@ applyConfig(loadSystemConfig())
 // 重新加载系统配置（保存系统配置后调用，避免必须重启进程）
 function reloadConfig() {
   applyConfig(loadSystemConfig())
-  return { userId, token, port, host, rateType, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath, enableMigu, enableBuiltInSources, enableBuiltInSubscriptions }
+  return { userId, token, port, host, rateType, pass, enableHDR, enableH265, programInfoUpdateInterval, refreshToken, adminPath, externalLogoBase, enableMigu, enableBuiltInSources, enableBuiltInSubscriptions }
 }
 
-export { userId, token, port, host, rateType, debug, pass, enableHDR, programInfoUpdateInterval, enableH265, refreshToken, adminPath, enableMigu, enableBuiltInSources, enableBuiltInSubscriptions, reloadConfig, sanitizeSegment }
+export { userId, token, port, host, rateType, debug, pass, enableHDR, programInfoUpdateInterval, enableH265, refreshToken, adminPath, externalLogoBase, enableMigu, enableBuiltInSources, enableBuiltInSubscriptions, reloadConfig, sanitizeSegment }
