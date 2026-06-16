@@ -56,12 +56,13 @@ function interfaceStr(url, headers, urlUserId, urlToken, profile) {
 
       // 只有存在任意自定义配置时才应用（避免首次访问解析失败）
       // 注意：旧写法 `config.channelGroupMap` 恒真（{} 也为真），会导致始终套用配置；
-      // 这里改为按内容判断，并补上 groupRenameMap / customGroups
+      // 这里改为按内容判断，并补上 groupRenameMap / customGroups / groupSortMode
       if (config && (
         Object.keys(config.channelGroupMap || {}).length > 0 ||
         Object.keys(config.channelRenameMap || {}).length > 0 ||
         Object.keys(config.channelOrder || {}).length > 0 ||
         Object.keys(config.groupRenameMap || {}).length > 0 ||
+        Object.keys(config.groupSortMode || {}).length > 0 ||
         config.hiddenChannels?.length > 0 ||
         config.deletedGroups?.length > 0 ||
         config.customGroups?.length > 0 ||
